@@ -1,4 +1,5 @@
 #include <iostream>
+#include <string>
 #include <iomanip>
 #include <cmath>
 #include <conio.h>
@@ -76,20 +77,20 @@ const int BUTTON_LENGTH = 7;
 const int EXPRESSION_MAX_LENGTH = 50;
 
 char option;
+
 void printMessageWindow(const string* MESSAGE_ARRAY, const int ARRAY_SIZE, const int TABLE_LENGTH);
 void printMessageBox(const string MESSAGE);
-
 void printLogo();
 void printState();
 void printButtonsTable();
 void printCalculator();
-void printFinalEntry();
+void printFinalMessage();
 
 void executeOption();
-
 void selectOptionByArrows(int direction);
 
 bool checkLastDoubleNumber();
+bool checkDivisionByZero();
 
 void handleMemory();
 void addToExpression();
@@ -107,8 +108,8 @@ int main() {
         if(option == '\x0D') option = BUTTONS[CurrentState.selectedOptionIndex][0];
         executeOption();
 
-    } while(option != '\x01' && option != 'q' && option != 'Q');
-    printFinalEntry();
+    } while(option != 'q' && option != 'Q');
+    printFinalMessage();
     return 0;
 }
 
@@ -132,27 +133,28 @@ void printLogo() {
     printMessageWindow(LOGO_TEXT, LOGO_SIZE, LOGO_LENGTH);
     printMessageBox(" STEROWANIE ");
     cout
-    << "\t 0-9  +  -  *  /    - dodawanie znaku do wyrazenia" << endl
+    << "\t 0-9  +  -  *  /  . - dodawanie znaku do wyrazenia" << endl
+    << "\t =                  - obliczenie wyrazenia" << endl
     << "\t W  S  A  D         - poruszanie wskaznikiem przyciskow" << endl
     << "\t Enter              - uzycie wskazanej opcji" << endl
     << "\t Backspace  B       - usuwanie ostatniego znaku wyrazenia" << endl
     << "\t C                  - usuwanie calego wyrazenia" << endl
     << "\t M                  - dodawanie wyniku do wyrazenia lub pamieci" << endl
-    << "\t Esc  Q             - wyjscie z programu" << endl << endl
+    << "\t Q                  - wyjscie z programu" << endl << endl
     << "\t Wcisnij dowolny przycisk, by rozpoczac...";
     getch();
 }
 
 void printState() {
-    printMessageBox(" " + (CurrentState.statusMessage != "" ? CurrentState.statusMessage : "Wpisz wyrazenie.") + " ");
-    cout << "\tWpis  : " << (CurrentState.expression != "" ? CurrentState.expression : "-") << endl;
-    cout << "\tPamiec: " << CurrentState.memory << endl;
-    cout << "\tWynik : " << CurrentState.result << endl << endl;
+    printMessageBox(" " + (CurrentState.statusMessage != "" ? CurrentState.statusMessage : "Wpisz wyrazenie") + " ");
+    cout << "\tWyrazenie :: " << (CurrentState.expression != "" ? CurrentState.expression : "-") << endl;
+    cout << "\t   Pamiec :: " << CurrentState.memory << endl;
+    cout << "\t    Wynik :: " << CurrentState.result << endl << endl;
 }
 
 void printButtonsTable() {
     if(BUTTONS_SIZE % BUTTONS_IN_ROW != 0) {
-        printMessageBox("Blad w trakcie wczytywania przycisków kalkulatora.");
+        printMessageBox("Blad w trakcie wczytywania przycisków kalkulatora");
         return;
     }
 
@@ -162,8 +164,8 @@ void printButtonsTable() {
 
     for(int row = 0; row < BUTTONS_SIZE / BUTTONS_IN_ROW; row++) {
 
-        cout << "\t";
         // Górna ramka
+        cout << "\t";
         for(int col = 0; col < BUTTONS_IN_ROW; col++) {
 
             if(row == 0 && col == 0) cornerSymbol = THIN.topLeft;
@@ -178,8 +180,8 @@ void printButtonsTable() {
         if(row > 0) rightSymbol = THIN.midRight;
         cout << rightSymbol << endl;
 
-        cout << "\t";
         //Wiersze danych - przyciski
+        cout << "\t";
         for(int col = 0; col < BUTTONS_IN_ROW; col++) {
             string currentOption = "";
             const int OFFSET_LEFT = floor(BUTTON_LENGTH / 2);
@@ -208,8 +210,9 @@ void printCalculator() {
     printButtonsTable();
 }
 
-void printFinalEntry() {
+void printFinalMessage() {
     system("cls");
+    cout << endl << endl;
     printMessageBox("Dziekujemy za skorzystanie z programu...");
     cout << endl;
 }
@@ -268,7 +271,7 @@ void executeOption() {
     }
 }
 
-void selectOptionByArrows(const int direction) {
+void selectOptionByArrows(int direction) {
     int newIndex = 0;
     int currentIndex = CurrentState.selectedOptionIndex;
 
@@ -310,10 +313,29 @@ bool checkLastDoubleNumber() {
     return true;
 }
 
+bool checkDivisionByZero() {
+    for(int i = 0; i < (int)CurrentState.expression.size(); i++) {
+        if(CurrentState.expression[i] == '/') {
+            int start = i + 1;
+            int ending = start;
+
+            while(ending < (int)CurrentState.expression.size()
+                  && CurrentState.expression[ending] != '/'
+                  && CurrentState.expression[ending] != '*'
+                  && CurrentState.expression[ending] != '-'
+                  && CurrentState.expression[ending] != '+') ending++;
+
+            string fragment = CurrentState.expression.substr(start, ending - start);
+            if(stod(fragment) == 0) return true;
+        }
+    }
+    return false;
+}
+
 void handleMemory() {
     if(CurrentState.result != 0) {
-        CurrentState.statusMessage = "Zapisano w pamieci wynik [" + to_string(CurrentState.result) + "]";
-        CurrentState.memory = CurrentState.result;
+        CurrentState.statusMessage = "Zapisano w pamieci dodatni wynik [" + to_string(abs(CurrentState.result)) + "]";
+        CurrentState.memory = abs(CurrentState.result);
         CurrentState.result = 0;
 
     } else {
@@ -335,23 +357,29 @@ void addToExpression() {
     const string PREFIX = "Dodano [";
     const string SUFFIX = "]";
     string newCharacter{option};
+    string errorMessage = "";
 
-    if(option == '.' && (!isdigit(LAST_CHAR) || !checkLastDoubleNumber())) return;
-    if((option == '+' || option == '-' || option == '*')
-       && !isdigit(LAST_CHAR)) return;
-    if(option == '/' && (!isdigit(LAST_CHAR) || LAST_CHAR == '0')) return;
+    if(CurrentState.expression.size() >= EXPRESSION_MAX_LENGTH)
+        errorMessage = "Maksymalna dlugosc wyrazenia [" + to_string(EXPRESSION_MAX_LENGTH) + " znakow]";
+    if(option == '.' && !isdigit(LAST_CHAR))
+        errorMessage = "Nie mozna wprowadzic separatora dziesietnego przed liczba";
+    if(option == '.' && !checkLastDoubleNumber())
+        errorMessage = "Liczba zawiera juz separator dziesietny";
+    if((option == '+' || option == '-' || option == '*' || option == '/') && !isdigit(LAST_CHAR))
+       errorMessage = "Nie dodano liczby po operatorze";
 
-    if(CurrentState.expression.size() < EXPRESSION_MAX_LENGTH) {
-        CurrentState.statusMessage = PREFIX + newCharacter + SUFFIX;
-        CurrentState.expression += newCharacter;
-    } else {
-        CurrentState.statusMessage = "Maksymalna dlugosc wyrazenia [" + to_string(EXPRESSION_MAX_LENGTH) + " znakow]";
+    if(errorMessage.size() > 0) {
+        CurrentState.statusMessage = errorMessage;
+        printCalculator();
+        return;
     }
+
+    CurrentState.statusMessage = PREFIX + newCharacter + SUFFIX;
+    CurrentState.expression += newCharacter;
     printCalculator();
 }
 
 void eraseExpression() {
-    cout << CurrentState.expression.size();
     if(CurrentState.expression.size() == 0) return;
     CurrentState.statusMessage = "Usunieto ostatni znak wyrazenia";
     CurrentState.expression.pop_back();
@@ -367,7 +395,17 @@ void clearExpression() {
 
 void evalExpression() {
     string expr = CurrentState.expression;
-    if(expr == "" || !isdigit(expr[expr.size() - 1])) return;
+    string errorMessage = "";
+
+    if(!isdigit(expr[expr.size() - 1])) errorMessage = "Ostatni znak wyrazenia nie jest cyfra";
+    if(expr == "") errorMessage = "Nie wprowadzono wyrazenia";
+    if(checkDivisionByZero()) errorMessage = "Wykryto dzielenie przez zero";
+
+    if(errorMessage.size() > 0) {
+        CurrentState.statusMessage = errorMessage;
+        printCalculator();
+        return;
+    }
 
     double valuesArray[100];
     char opsArray[100];
@@ -421,7 +459,7 @@ double applyOp(double a, double b, char op) {
         case '+': return a + b;
         case '-': return a - b;
         case '*': return a * b;
-        case '/': return a / b; // opracowac blokade dzielenia przez zero
+        case '/': return a / b;
     }
     return 0;
 }
