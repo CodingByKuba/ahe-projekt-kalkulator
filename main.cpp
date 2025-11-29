@@ -1,348 +1,427 @@
 #include <iostream>
 #include <iomanip>
-#include <limits>
-#include <conio.h>
 #include <cmath>
+#include <conio.h>
 
 using namespace std;
 
-/***** DEKLARACJE ZMIENNYCH, STALYCH, FUNKCJI I PROCEDUR *****/
-double x, y;
-char theme = 'D';
-char menuOption;
+struct GridChars {
+    char topLeft;
+    char topMid;
+    char topRight;
+    char midLeft;
+    char midMid;
+    char midRight;
+    char bottomLeft;
+    char bottomMid;
+    char bottomRight;
+    char horizontal;
+    char vertical;
+};
 
-const char SYMBOL_TL = '\xC9'; // ┌
-const char SYMBOL_TC = '\xCB'; // ┬
-const char SYMBOL_TR = '\xBB'; // ┐
-const char SYMBOL_H  = '\xCD'; // ─
-const char SYMBOL_V  = '\xBA'; // │
-const char SYMBOL_CL = '\xCC'; // ├
-const char SYMBOL_CC = '\xCE'; // ┼
-const char SYMBOL_CR = '\xB9'; // ┤
-const char SYMBOL_BL = '\xC8'; // └
-const char SYMBOL_BC = '\xCA'; // ┴
-const char SYMBOL_BR = '\xBC'; // ┘
+struct CalculatorState {
+    long double memory;
+    string expression;
+    string statusMessage;
+    int selectedOptionIndex;
+    long double result;
+};
+
+const GridChars DOUBLED = {
+    '\xC9', '\xCB', '\xBB', //top
+    '\xCC', '\xCE', '\xB9', //mid
+    '\xC8', '\xCA', '\xBC', //bottom
+    '\xCD', '\xBA' //horizontal/vertical
+};
+
+const GridChars THIN = {
+    '\xDA', '\xC2', '\xBF', //top
+    '\xC3', '\xC5', '\xB4', //mid
+    '\xC0', '\xC1', '\xD9', //bottom
+    '\xC4', '\xB3' //horizontal/vertical
+};
+
+CalculatorState CurrentState = {
+    0, //memory
+    "", //expression
+    "", //status
+    0, //index selected
+    0, //result
+};
 
 const string LOGO_TEXT[] = {
-"  *            KALKULATOR            *  ",
-" *            PROJEKT NR 1            * ",
-"*                                      *",
+"               KALKULATOR               ",
+"              PROJEKT NR 1              ",
+"                                        ",
 "           SEMESTR 1 GRUPA D1           ",
 "        1. TOMASZ ZALISZ (lider)        ",
-"*       2. MAREK ZALISZ                *",
-" *      3. KAMIL WROBEL               * ",
-"  *     4. JAKUB MARCZAK             *  "
+"        2. MAREK ZALISZ                 ",
+"        3. KAMIL WROBEL                 ",
+"        4. JAKUB MARCZAK                "
 };
-const int LOGO_LENGTH = sizeof(LOGO_TEXT) / sizeof(LOGO_TEXT[0]);
-const int LOGO_WIDTH = 40;
+const int LOGO_SIZE = sizeof(LOGO_TEXT) / sizeof(LOGO_TEXT[0]);
+const int LOGO_LENGTH = 40;
+
+const string BUTTONS[] = {
+    "B", "C", "M", "Q",
+    "7", "8", "9", "/",
+    "4", "5", "6", "*",
+    "1", "2", "3", "+",
+    "0", ".", "=", "-",
+};
+const int BUTTONS_SIZE = sizeof BUTTONS / sizeof BUTTONS[0];
+const int BUTTONS_IN_ROW = 4;
+const int BUTTON_LENGTH = 7;
+
+const int EXPRESSION_MAX_LENGTH = 50;
+
+char option;
+void printMessageWindow(const string* MESSAGE_ARRAY, const int ARRAY_SIZE, const int TABLE_LENGTH);
+void printMessageBox(const string MESSAGE);
 
 void printLogo();
-void printMainMenu();
-void printErrorBox(const string ERROR_MESSAGE);
+void printState();
+void printButtonsTable();
+void printCalculator();
+void printFinalEntry();
 
-void switchTheme();
+void executeOption();
 
-long double addNumbers(double x, double y);
-long double subtractNumbers(double x, double y);
-long double multiplyNumbers(double x, double y);
-long double divideNumbers(double x, double y);
-long double exponentiateNumbers(double x, int y);
-long double squareNumbers(double x);
-long long calculateFactorial(int x);
+void selectOptionByArrows(int direction);
 
-double calculateBmi(double weight, double height);
+bool checkLastDoubleNumber();
 
-struct ResultStructure {
-    string operation;
-    string result;
-};
+void handleMemory();
+void addToExpression();
+void eraseExpression();
+void clearExpression();
+void evalExpression();
+int precedence(char op);
+double applyOp(double a, double b, char op);
 
-const int OPERATIONS_WIDTH = 20;
-const int RESULTS_WIDTH = 40;
-void printResultTable(const ResultStructure VALUES[], const int ARRAY_SIZE);
-
-void classicCalculator();
-void financialCalculator();
-void bmiCalculator();
-string defineBmi(const double BMI);
-
-/***** GLOWNA FUNKCJA PROGRAMU *****/
 int main() {
     printLogo();
-
+    printCalculator();
     do {
-        system("cls");
-        printMainMenu();
+        option = getch();
+        if(option == '\x0D') option = BUTTONS[CurrentState.selectedOptionIndex][0];
+        executeOption();
 
-        menuOption = getch();
-
-        if((menuOption == 't') | (menuOption == 'T')) {
-            switchTheme();
-        }
-        else if((menuOption == 'c') | (menuOption == 'C')) {
-            classicCalculator();
-        }
-        else if((menuOption == 'f') | (menuOption == 'F')) {
-            financialCalculator();
-        }
-        else if((menuOption == 'b') | (menuOption == 'B')) {
-            bmiCalculator();
-        }
-        else if((menuOption == 'q') | (menuOption == 'Q')) {
-            cout << "Zakonczenie programu...";
-        }
-        else {
-            printErrorBox("Nieprawidlowa opcja menu...");
-            system("pause");
-        }
-
-    } while((menuOption != 'q') & (menuOption != 'Q'));
-
-    system("cls");
-    printErrorBox("Dziekujemy za skorzystanie z programu...");
-
+    } while(option != '\x01' && option != 'q' && option != 'Q');
+    printFinalEntry();
     return 0;
 }
 
-/***** FUNKCJE I PROCEDURY *****/
+void printMessageWindow(const string* MESSAGE_ARRAY, const int ARRAY_SIZE, const int TABLE_LENGTH) {
+    cout << endl << "\t" << THIN.topLeft << string(TABLE_LENGTH, THIN.horizontal) << THIN.topRight << endl;
+    for(int line = 0; line < ARRAY_SIZE; line++) {
+        cout << "\t" << THIN.vertical << left << setw(TABLE_LENGTH)
+        << MESSAGE_ARRAY[line] << THIN.vertical << endl;
+    }
+    cout << "\t" << THIN.bottomLeft << string(TABLE_LENGTH, THIN.horizontal) << THIN.bottomRight << endl << endl;
+}
+
+void printMessageBox(const string MESSAGE) {
+    cout << "\t" << DOUBLED.topLeft << string(MESSAGE.size(), DOUBLED.horizontal) << DOUBLED.topRight << endl
+    << "\t" << DOUBLED.vertical << left << setw(MESSAGE.size()) << MESSAGE << DOUBLED.vertical << endl
+    << "\t" << DOUBLED.bottomLeft << string(MESSAGE.size(), DOUBLED.horizontal) << DOUBLED.bottomRight << endl;
+}
+
 void printLogo() {
-    cout << endl << "\t" << SYMBOL_TL << string(LOGO_WIDTH, SYMBOL_H) << SYMBOL_TR << endl;
-    for(int line = 0; line < LOGO_LENGTH; line++) {
-        cout << "\t" << SYMBOL_V << left << setw(LOGO_WIDTH)
-        << LOGO_TEXT[line] << SYMBOL_V << endl;
-    }
-    cout << "\t" << SYMBOL_BL << string(LOGO_WIDTH, SYMBOL_H) << SYMBOL_BR << endl << endl;
-    system("pause");
+    cout << endl;
+    printMessageWindow(LOGO_TEXT, LOGO_SIZE, LOGO_LENGTH);
+    printMessageBox(" STEROWANIE ");
+    cout
+    << "\t 0-9  +  -  *  /    - dodawanie znaku do wyrazenia" << endl
+    << "\t W  S  A  D         - poruszanie wskaznikiem przyciskow" << endl
+    << "\t Enter              - uzycie wskazanej opcji" << endl
+    << "\t Backspace  B       - usuwanie ostatniego znaku wyrazenia" << endl
+    << "\t C                  - usuwanie calego wyrazenia" << endl
+    << "\t M                  - dodawanie wyniku do wyrazenia lub pamieci" << endl
+    << "\t Esc  Q             - wyjscie z programu" << endl << endl
+    << "\t Wcisnij dowolny przycisk, by rozpoczac...";
+    getch();
 }
 
-void printMainMenu() {
-    cout << endl << " Menu: " << endl
-    << " - [T] Zmiana motywu" << endl
-    << " - [C] Kalkulator klasyczny" << endl
-    << " - [F] Kalkulator finansowy" << endl
-    << " - [B] Kalkulator BMI" << endl
-    << " - [Q] Wyjscie" << endl;
+void printState() {
+    printMessageBox(" " + (CurrentState.statusMessage != "" ? CurrentState.statusMessage : "Wpisz wyrazenie.") + " ");
+    cout << "\tWpis  : " << (CurrentState.expression != "" ? CurrentState.expression : "-") << endl;
+    cout << "\tPamiec: " << CurrentState.memory << endl;
+    cout << "\tWynik : " << CurrentState.result << endl << endl;
 }
 
-void printErrorBox(const string ERROR_MESSAGE) {
-    cout << endl << "\a\t" << SYMBOL_TL << string(ERROR_MESSAGE.length(), SYMBOL_H) << SYMBOL_TR << endl
-    << "\t" << SYMBOL_V << left << setw(ERROR_MESSAGE.length()) << ERROR_MESSAGE << SYMBOL_V << endl
-    << "\t" << SYMBOL_BL << string(ERROR_MESSAGE.length(), SYMBOL_H) << SYMBOL_BR << endl << endl;
-}
-
-void switchTheme() {
-    if(theme == 'D') {
-        system("COLOR 70");
-        theme = 'L';
-    }
-    else {
-        system("COLOR 07");
-        theme = 'D';
-    }
-}
-
-long double addNumbers(double x, double y) {
-    return x + y;
-}
-
-long double subtractNumbers(double x, double y) {
-    return x - y;
-}
-
-long double multiplyNumbers(double x, double y) {
-    return x * y;
-}
-
-long double divideNumbers(double x, double y) {
-    return x / y;
-}
-
-long double exponentiateNumbers(double x, int y) {
-    return pow(x, y);
-}
-
-long double squareNumbers(double x) {
-    return sqrt(x);
-}
-
-long long calculateFactorial(int x) {
-    if(x == 0) return 1;
-    long long result = 1;
-    for(int i = 1; i < x + 1; i++) {
-        result *= i;
-    }
-    return result;
-}
-
-double calculateBmi(double weight, double height) {
-    return weight / ((height / 100) * (height / 100));
-}
-
-void printResultTable(const ResultStructure VALUES[], const int ARRAY_SIZE) {
-    // Górna ramka
-    cout << "\t" << SYMBOL_TL << string(OPERATIONS_WIDTH, SYMBOL_H)
-    << SYMBOL_TC << string(RESULTS_WIDTH, SYMBOL_H) << SYMBOL_TR << endl;
-
-    // Nagłówki
-    cout << "\t" << SYMBOL_V << left << setw(OPERATIONS_WIDTH) << "Operacje:"
-    << SYMBOL_V << left << setw(RESULTS_WIDTH) << "Wyniki:" << SYMBOL_V << endl;
-
-    // Środkowa ramka
-    cout << "\t" << SYMBOL_CL << string(OPERATIONS_WIDTH, SYMBOL_H)
-    << SYMBOL_CC << string(RESULTS_WIDTH, SYMBOL_H) << SYMBOL_CR << endl;
-
-    //Wiersze danych
-    for (int i = 0; i < ARRAY_SIZE; ++i) {
-        cout << "\t" << SYMBOL_V << left << setw(OPERATIONS_WIDTH) << VALUES[i].operation
-        << SYMBOL_V << left << setw(RESULTS_WIDTH) << setprecision(5) << VALUES[i].result
-        << SYMBOL_V << endl;
-
-        if(i < ARRAY_SIZE - 1) {
-            cout << "\t" << SYMBOL_CL << string(OPERATIONS_WIDTH, SYMBOL_H)
-            << SYMBOL_CC << string(RESULTS_WIDTH, SYMBOL_H) << SYMBOL_CR << endl;
-        }
+void printButtonsTable() {
+    if(BUTTONS_SIZE % BUTTONS_IN_ROW != 0) {
+        printMessageBox("Blad w trakcie wczytywania przycisków kalkulatora.");
+        return;
     }
 
-    // Dolna ramka
-    cout << "\t" << SYMBOL_BL << string(OPERATIONS_WIDTH, SYMBOL_H)
-    << SYMBOL_BC << string(RESULTS_WIDTH, SYMBOL_H) << SYMBOL_BR << endl;
+    char cornerSymbol = THIN.topLeft;
+    char rightSymbol = THIN.topRight;
+    char bottomCornerSymbol = THIN.bottomMid;
+
+    for(int row = 0; row < BUTTONS_SIZE / BUTTONS_IN_ROW; row++) {
+
+        cout << "\t";
+        // Górna ramka
+        for(int col = 0; col < BUTTONS_IN_ROW; col++) {
+
+            if(row == 0 && col == 0) cornerSymbol = THIN.topLeft;
+            if(row == 0 && col > 0) cornerSymbol = THIN.topMid;
+            if(row > 0 && col == 0) cornerSymbol = THIN.midLeft;
+            if(row > 0 && col > 0) cornerSymbol = THIN.midMid;
+
+            cout << cornerSymbol << string(BUTTON_LENGTH, THIN.horizontal);
+        }
+
+        if(row == 0) rightSymbol = THIN.topRight;
+        if(row > 0) rightSymbol = THIN.midRight;
+        cout << rightSymbol << endl;
+
+        cout << "\t";
+        //Wiersze danych - przyciski
+        for(int col = 0; col < BUTTONS_IN_ROW; col++) {
+            string currentOption = "";
+            const int OFFSET_LEFT = floor(BUTTON_LENGTH / 2);
+            const int OPTION_INDEX = row * BUTTONS_IN_ROW + col;
+            for(int i = 0; i < OFFSET_LEFT; i++) currentOption += CurrentState.selectedOptionIndex == OPTION_INDEX ? ">" : " ";
+            currentOption += BUTTONS[OPTION_INDEX];
+
+            cout << THIN.vertical << left << setw(BUTTON_LENGTH)  << currentOption;
+        }
+        cout << THIN.vertical << endl;
+    }
+
+    cout << "\t" << THIN.bottomLeft;
+
+    for(int col = 0; col < BUTTONS_IN_ROW; col++) {
+        if(col < BUTTONS_IN_ROW - 1) bottomCornerSymbol = THIN.bottomMid;
+        if(col == BUTTONS_IN_ROW - 1) bottomCornerSymbol = THIN.bottomRight;
+        cout << string(BUTTON_LENGTH, THIN.horizontal) << bottomCornerSymbol;
+    }
 }
 
-void classicCalculator() {
-    char key;
-
-    do {
-        system("cls");
-
-        cout << "\t* KALKULATOR KLASYCZNY *" << endl
-        << " Oblicza wartosci dodawania, odejmowania i wiele innych..."
-        << endl << endl;
-
-        cin.clear();
-        cout << " Podaj wartosc X: ";
-        cin >> x;
-        cout << " Podaj wartosc Y: ";
-        cin >> y;
-
-        if(cin.fail()) {
-            cin.clear();
-            cin.ignore(numeric_limits<streamsize>::max(), '\n');
-            printErrorBox("Wprowadzono nieprawidlowe dane...");
-        }
-        else {
-            const ResultStructure VALUES[] = {
-                {"X + Y", to_string(addNumbers(x, y))},
-                {"X - Y", to_string(subtractNumbers(x, y))},
-                {"X * Y", to_string(multiplyNumbers(x, y))},
-                {"X / Y", to_string(divideNumbers(x, y))},
-                {"X ^ Y", to_string(exponentiateNumbers(x, y))},
-                {"/X", to_string(squareNumbers(x))},
-                {"X!", to_string(calculateFactorial(x))}
-            };
-
-            const int ARRAY_SIZE = sizeof(VALUES) / sizeof(VALUES[0]);
-            printResultTable(VALUES, ARRAY_SIZE);
-        }
-
-        cout << "\n Czy chcesz ponownie skorzystac z kalkulatora? [T/N] ";
-        key = getch();
-    } while((key != 'n') & (key != 'N'));
+void printCalculator() {
+    system("cls");
+    cout << endl << endl;
+    printState();
+    printButtonsTable();
 }
 
-void financialCalculator() {
-    char key;
-
-    do {
-        system("cls");
-
-        cout << "\t* KALKULATOR FINANSOWY *" << endl
-        << " Przelicza podana ilosc PLN na przyblizona wartosc w innych walutach..."
-        << endl << endl;
-
-        cin.clear();
-        cout << " Podaj ilosc PLN: ";
-        cin >> x;
-
-        if(cin.fail()) {
-            cin.clear();
-            cin.ignore(numeric_limits<streamsize>::max(), '\n');
-            printErrorBox("Wprowadzono nieprawidlowe dane...");
-        }
-        else {
-             const ResultStructure VALUES[] = {
-                {"EUR", to_string(x / 4.23)},
-                {"USD", to_string(x / 3.66)},
-                {"GBP", to_string(x / 4.82)},
-                {"JPY", to_string(x / 0.0237)}
-            };
-
-            const int ARRAY_SIZE = sizeof(VALUES) / sizeof(VALUES[0]);
-            printResultTable(VALUES, ARRAY_SIZE);
-        }
-
-        cout << "\n Czy chcesz ponownie skorzystac z kalkulatora? [T/N] ";
-        key = getch();
-    } while((key != 'n') & (key != 'N'));
+void printFinalEntry() {
+    system("cls");
+    printMessageBox("Dziekujemy za skorzystanie z programu...");
+    cout << endl;
 }
 
-void bmiCalculator() {
-    char key;
-
-    do {
-        system("cls");
-
-        cout << "\t* KALKULATOR BMI *" << endl
-        << " Oblicza wskaznik BMI na podstawie masy ciala i wzrostu..."
-        << endl << endl;
-
-        cin.clear();
-        cout << " Podaj swoja wage w KG: ";
-        cin >> x;
-        cout << " Podaj swoj wzrost w CM: ";
-        cin >> y;
-
-        if(cin.fail()) {
-            cin.clear();
-            cin.ignore(numeric_limits<streamsize>::max(), '\n');
-            printErrorBox("Wprowadzono nieprawidlowe dane...");
-        }
-        else if(x < 30 || x > 500) {
-            printErrorBox("Podana waga jest nieprawidlowa...");
-        }
-        else if(y < 50 || y > 250) {
-            printErrorBox("Podany wzrost jest nieprawidlowy...");
-        }
-        else {
-            const double BMI = calculateBmi(x, y);
-
-            const ResultStructure VALUES[] = {
-                {"Waga [KG]", to_string(x)},
-                {"Wzrost [M]", to_string(y / 100)},
-                {"BMI", to_string(BMI)}
-            };
-
-            const int ARRAY_SIZE = sizeof(VALUES) / sizeof(VALUES[0]);
-            printResultTable(VALUES, ARRAY_SIZE);
-            cout << defineBmi(BMI);
-        }
-
-        cout << "\n Czy chcesz ponownie skorzystac z kalkulatora? [T/N] ";
-        key = getch();
-    } while((key != 'n') & (key != 'N'));
+void executeOption() {
+    switch(option) {
+        case 'w':
+        case 'W':
+            selectOptionByArrows(1);
+            break;
+        case 'd':
+        case 'D':
+            selectOptionByArrows(2);
+            break;
+        case 's':
+        case 'S':
+            selectOptionByArrows(3);
+            break;
+        case 'a':
+        case 'A':
+            selectOptionByArrows(4);
+            break;
+        case 'b':
+        case 'B':
+        case '\x08':
+            eraseExpression();
+            break;
+        case 'c':
+        case 'C':
+            clearExpression();
+            break;
+        case 'm':
+        case 'M':
+            handleMemory();
+            break;
+        case '=':
+            evalExpression();
+            break;
+        case '0':
+        case '1':
+        case '2':
+        case '3':
+        case '4':
+        case '5':
+        case '6':
+        case '7':
+        case '8':
+        case '9':
+        case '.':
+        case '+':
+        case '-':
+        case '*':
+        case '/':
+            addToExpression();
+            break;
+    }
 }
 
-string defineBmi(const double BMI) {
-    string result = "\n\n Twoje BMI wskazuje na:\n";
+void selectOptionByArrows(const int direction) {
+    int newIndex = 0;
+    int currentIndex = CurrentState.selectedOptionIndex;
 
-    if(BMI < 16) result += " * WYGLODZENIE";
-    else if(BMI >= 16 && BMI < 17) result += " * WYCHUDZENIE";
-    else if(BMI >= 17 && BMI < 18.5) result += " * NIEDOWAGE";
-    else if(BMI >= 18.5 && BMI < 25) result += " * WAGE PRAWIDLOWA";
-    else if(BMI >= 25 && BMI < 30) result += " * NADWAGE";
-    else if(BMI >= 30 && BMI < 35) result += " * OTYLOSC I STOPNIA";
-    else if(BMI >= 35 && BMI < 40) result += " * OTYLOSC II STOPNIA";
-    else result += " * OTYLOSC III STOPNIA";
+    if(direction == 1) {
+        if(currentIndex < BUTTONS_IN_ROW) return;
+        newIndex = currentIndex - BUTTONS_IN_ROW;
+    }
 
-    result += "\n";
-    return result;
+    if(direction == 2) {
+        if((currentIndex + 1) % BUTTONS_IN_ROW == 0 && currentIndex > 0) return;
+        newIndex = currentIndex + 1;
+    }
+
+    if(direction == 3) {
+        if(currentIndex + BUTTONS_IN_ROW >= BUTTONS_SIZE) return;
+        newIndex = currentIndex + BUTTONS_IN_ROW;
+    }
+
+    if(direction == 4) {
+        if(currentIndex % BUTTONS_IN_ROW == 0 || currentIndex == 0) return;
+        newIndex = currentIndex - 1;
+    }
+
+    CurrentState.selectedOptionIndex = newIndex;
+    printCalculator();
+}
+
+bool checkLastDoubleNumber() {
+    string reversed = "";
+    for(int i = CurrentState.expression.size(); i >= 0; i--) {
+        reversed += CurrentState.expression[i];
+    }
+    int dotCount = 0;
+    for(char c : reversed) {
+        if(c == '.') dotCount++;
+        if(c == '+' || c == '-' || c == '*' || c == '/') break;
+    }
+    if(dotCount > 0) return false;
+    return true;
+}
+
+void handleMemory() {
+    if(CurrentState.result != 0) {
+        CurrentState.statusMessage = "Zapisano w pamieci wynik [" + to_string(CurrentState.result) + "]";
+        CurrentState.memory = CurrentState.result;
+        CurrentState.result = 0;
+
+    } else {
+        char expressionLast = CurrentState.expression[CurrentState.expression.size() - 1];
+        if(CurrentState.expression == ""
+           || expressionLast == '+'
+           || expressionLast == '-'
+           || expressionLast == '*'
+           || expressionLast == '/') {
+            CurrentState.statusMessage = "Dodano do wyrazenia liczbe z pamieci [" + to_string(CurrentState.memory) + "]";
+            CurrentState.expression += to_string(CurrentState.memory);
+        }
+    }
+    printCalculator();
+}
+
+void addToExpression() {
+    const char LAST_CHAR = CurrentState.expression[CurrentState.expression.size() - 1];
+    const string PREFIX = "Dodano [";
+    const string SUFFIX = "]";
+    string newCharacter{option};
+
+    if(option == '.' && (!isdigit(LAST_CHAR) || !checkLastDoubleNumber())) return;
+    if((option == '+' || option == '-' || option == '*')
+       && !isdigit(LAST_CHAR)) return;
+    if(option == '/' && (!isdigit(LAST_CHAR) || LAST_CHAR == '0')) return;
+
+    if(CurrentState.expression.size() < EXPRESSION_MAX_LENGTH) {
+        CurrentState.statusMessage = PREFIX + newCharacter + SUFFIX;
+        CurrentState.expression += newCharacter;
+    } else {
+        CurrentState.statusMessage = "Maksymalna dlugosc wyrazenia [" + to_string(EXPRESSION_MAX_LENGTH) + " znakow]";
+    }
+    printCalculator();
+}
+
+void eraseExpression() {
+    cout << CurrentState.expression.size();
+    if(CurrentState.expression.size() == 0) return;
+    CurrentState.statusMessage = "Usunieto ostatni znak wyrazenia";
+    CurrentState.expression.pop_back();
+    printCalculator();
+}
+
+void clearExpression() {
+    CurrentState.statusMessage = "Wyczyszczono wyrazenie";
+    CurrentState.expression = "";
+    CurrentState.result = 0;
+    printCalculator();
+}
+
+void evalExpression() {
+    string expr = CurrentState.expression;
+    if(expr == "" || !isdigit(expr[expr.size() - 1])) return;
+
+    double valuesArray[100];
+    char opsArray[100];
+    int valTop = -1, opTop = -1;
+
+    for (int i = 0; i < (int)expr.size(); i++) {
+
+        if (isdigit(expr[i]) || expr[i] == '.') {
+            double value = 0, fraction = 0.1;
+            bool isFloat = false;
+
+            while (i < (int)expr.size() && (isdigit(expr[i]) || expr[i] == '.')) {
+                if (expr[i] == '.') isFloat = true;
+                else if (!isFloat) value = value * 10 + (expr[i] - '0');
+                else {
+                    value += (expr[i] - '0') * fraction;
+                    fraction *= 0.1;
+                }
+                i++;
+            }
+            valuesArray[++valTop] = value;
+            i--;
+        } else {
+            while (opTop >= 0 && precedence(opsArray[opTop]) >= precedence(expr[i])) {
+                double b = valuesArray[valTop--], a = valuesArray[valTop--];
+                valuesArray[++valTop] = applyOp(a, b, opsArray[opTop--]);
+            }
+            opsArray[++opTop] = expr[i];
+        }
+    }
+
+    while (opTop >= 0) {
+        double b = valuesArray[valTop--], a = valuesArray[valTop--];
+        valuesArray[++valTop] = applyOp(a, b, opsArray[opTop--]);
+    }
+
+    CurrentState.statusMessage = "Obliczono wartosc wyrazenia [" + expr + "]";
+    CurrentState.result = valuesArray[valTop];
+    CurrentState.expression = "";
+    printCalculator();
+}
+
+int precedence(char op) {
+    if (op == '+' || op == '-') return 1;
+    if (op == '*' || op == '/') return 2;
+    return 0;
+}
+
+double applyOp(double a, double b, char op) {
+    switch (op) {
+        case '+': return a + b;
+        case '-': return a - b;
+        case '*': return a * b;
+        case '/': return a / b; // opracowac blokade dzielenia przez zero
+    }
+    return 0;
 }
