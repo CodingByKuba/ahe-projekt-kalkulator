@@ -21,11 +21,10 @@ struct GridChars {
 };
 
 struct CalculatorState {
-    long double memory;
     string expression;
     string statusMessage;
     int selectedOptionIndex;
-    long double result;
+    string expressionResult;
 };
 
 const GridChars DOUBLED = {
@@ -43,11 +42,10 @@ const GridChars THIN = {
 };
 
 CalculatorState CurrentState = {
-    0, //memory
     "", //expression
     "", //status
     0, //index selected
-    0, //result
+    "" //result
 };
 
 const string LOGO_TEXT[] = {
@@ -63,8 +61,26 @@ const string LOGO_TEXT[] = {
 const int LOGO_SIZE = sizeof(LOGO_TEXT) / sizeof(LOGO_TEXT[0]);
 const int LOGO_LENGTH = 40;
 
+const string CONTROLS_TEXT[] = {
+" STEROWANIE:                                                    ",
+" 0-9                - dodawanie cyfry do wyrazenia              ",
+" .                  - dodawanie separatora dziesietnego         ",
+" e p !              - dodawanie liczby e/PI/silnia do wyrazenia ",
+" + - * / ^ #        - dodawanie operatora do wyrazenia          ",
+" =                  - obliczenie wyrazenia                      ",
+" W  S  A  D         - poruszanie wskaznikiem przyciskow         ",
+" Enter              - uzycie wskazanej opcji                    ",
+" Backspace  B       - usuwanie ostatniego znaku wyrazenia       ",
+" C                  - usuwanie calego wyrazenia                 ",
+" M                  - dodawanie wyniku do wyrazenia lub pamieci ",
+" Q                  - wyjscie z programu                        ",
+};
+const int CONTROLS_SIZE = sizeof(CONTROLS_TEXT) / sizeof(CONTROLS_TEXT[0]);
+const int CONTROLS_LENGTH = 64;
+
 const string BUTTONS[] = {
-    "B", "C", "M", "Q",
+    "p", "B", "C", "Q",
+    "e", "!", "^", "#",
     "7", "8", "9", "/",
     "4", "5", "6", "*",
     "1", "2", "3", "+",
@@ -90,15 +106,20 @@ void executeOption();
 void selectOptionByArrows(int direction);
 
 bool checkLastDoubleNumber();
-bool checkDivisionByZero();
+bool checkNumberBeforeFactorial();
+bool checkDivisionByZero(string &expression);
+bool checkIsOperator(char op);
 
-void handleMemory();
 void addToExpression();
 void eraseExpression();
 void clearExpression();
 void evalExpression();
 int precedence(char op);
 double applyOp(double a, double b, char op);
+
+long long calculateFactorial(int number);
+long double calculateEuler();
+long double calculatePi();
 
 int main() {
     printLogo();
@@ -119,7 +140,7 @@ void printMessageWindow(const string* MESSAGE_ARRAY, const int ARRAY_SIZE, const
         cout << "\t" << THIN.vertical << left << setw(TABLE_LENGTH)
         << MESSAGE_ARRAY[line] << THIN.vertical << endl;
     }
-    cout << "\t" << THIN.bottomLeft << string(TABLE_LENGTH, THIN.horizontal) << THIN.bottomRight << endl << endl;
+    cout << "\t" << THIN.bottomLeft << string(TABLE_LENGTH, THIN.horizontal) << THIN.bottomRight << endl;
 }
 
 void printMessageBox(const string MESSAGE) {
@@ -131,25 +152,14 @@ void printMessageBox(const string MESSAGE) {
 void printLogo() {
     cout << endl;
     printMessageWindow(LOGO_TEXT, LOGO_SIZE, LOGO_LENGTH);
-    printMessageBox(" STEROWANIE ");
-    cout
-    << "\t 0-9  +  -  *  /  . - dodawanie znaku do wyrazenia" << endl
-    << "\t =                  - obliczenie wyrazenia" << endl
-    << "\t W  S  A  D         - poruszanie wskaznikiem przyciskow" << endl
-    << "\t Enter              - uzycie wskazanej opcji" << endl
-    << "\t Backspace  B       - usuwanie ostatniego znaku wyrazenia" << endl
-    << "\t C                  - usuwanie calego wyrazenia" << endl
-    << "\t M                  - dodawanie wyniku do wyrazenia lub pamieci" << endl
-    << "\t Q                  - wyjscie z programu" << endl << endl
-    << "\t Wcisnij dowolny przycisk, by rozpoczac...";
+    printMessageWindow(CONTROLS_TEXT, CONTROLS_SIZE, CONTROLS_LENGTH);
     getch();
 }
 
 void printState() {
     printMessageBox(" " + (CurrentState.statusMessage != "" ? CurrentState.statusMessage : "Wpisz wyrazenie") + " ");
     cout << "\tWyrazenie :: " << (CurrentState.expression != "" ? CurrentState.expression : "-") << endl;
-    cout << "\t   Pamiec :: " << CurrentState.memory << endl;
-    cout << "\t    Wynik :: " << CurrentState.result << endl << endl;
+    cout << "\t    Wynik :: " << CurrentState.expressionResult << endl << endl;
 }
 
 void printButtonsTable() {
@@ -244,10 +254,6 @@ void executeOption() {
         case 'C':
             clearExpression();
             break;
-        case 'm':
-        case 'M':
-            handleMemory();
-            break;
         case '=':
             evalExpression();
             break;
@@ -266,6 +272,11 @@ void executeOption() {
         case '-':
         case '*':
         case '/':
+        case '^':
+        case '#':
+        case '!':
+        case 'e':
+        case 'p':
             addToExpression();
             break;
     }
@@ -301,55 +312,51 @@ void selectOptionByArrows(int direction) {
 
 bool checkLastDoubleNumber() {
     string reversed = "";
-    for(int i = CurrentState.expression.size(); i >= 0; i--) {
+    for(int i = CurrentState.expression.size() - 1; i >= 0; i--) {
         reversed += CurrentState.expression[i];
     }
     int dotCount = 0;
     for(char c : reversed) {
         if(c == '.') dotCount++;
-        if(c == '+' || c == '-' || c == '*' || c == '/') break;
+        if(checkIsOperator(c)) break;
     }
-    if(dotCount > 0) return false;
-    return true;
+    if(dotCount > 0) return true;
+    return false;
 }
 
-bool checkDivisionByZero() {
-    for(int i = 0; i < (int)CurrentState.expression.size(); i++) {
-        if(CurrentState.expression[i] == '/') {
+bool checkNumberBeforeFactorial() {
+    string reversed = "";
+    for(int i = CurrentState.expression.size() - 1; i >= 0; i--) {
+        char c = CurrentState.expression[i];
+        if(!isdigit(c)) break;
+        reversed += c;
+    }
+    string turnedBack = "";
+    for(char c : reversed) turnedBack = c + turnedBack;
+    if(stoi(turnedBack) < 0 || stoi(turnedBack) > 20) return true;
+    return false;
+}
+
+bool checkDivisionByZero(string &expression) {
+    for(int i = 0; i < (int)expression.size(); i++) {
+        if(expression[i] == '/') {
             int start = i + 1;
             int ending = start;
 
-            while(ending < (int)CurrentState.expression.size()
-                  && CurrentState.expression[ending] != '/'
-                  && CurrentState.expression[ending] != '*'
-                  && CurrentState.expression[ending] != '-'
-                  && CurrentState.expression[ending] != '+') ending++;
+            while(ending < (int)expression.size() && !checkIsOperator(expression[ending]))
+                ending++;
 
-            string fragment = CurrentState.expression.substr(start, ending - start);
+            string fragment = expression.substr(start, ending - start);
             if(stod(fragment) == 0) return true;
         }
     }
     return false;
 }
 
-void handleMemory() {
-    if(CurrentState.result != 0) {
-        CurrentState.statusMessage = "Zapisano w pamieci dodatni wynik [" + to_string(abs(CurrentState.result)) + "]";
-        CurrentState.memory = abs(CurrentState.result);
-        CurrentState.result = 0;
-
-    } else {
-        char expressionLast = CurrentState.expression[CurrentState.expression.size() - 1];
-        if(CurrentState.expression == ""
-           || expressionLast == '+'
-           || expressionLast == '-'
-           || expressionLast == '*'
-           || expressionLast == '/') {
-            CurrentState.statusMessage = "Dodano do wyrazenia liczbe z pamieci [" + to_string(CurrentState.memory) + "]";
-            CurrentState.expression += to_string(CurrentState.memory);
-        }
-    }
-    printCalculator();
+bool checkIsOperator(char op) {
+    if(!op) return false;
+    if(op == '+' || op == '-' || op == '*' || op == '/' || op == '^' || op == '#') return true;
+    return false;
 }
 
 void addToExpression() {
@@ -361,12 +368,22 @@ void addToExpression() {
 
     if(CurrentState.expression.size() >= EXPRESSION_MAX_LENGTH)
         errorMessage = "Maksymalna dlugosc wyrazenia [" + to_string(EXPRESSION_MAX_LENGTH) + " znakow]";
-    if(option == '.' && !isdigit(LAST_CHAR))
-        errorMessage = "Nie mozna wprowadzic separatora dziesietnego przed liczba";
-    if(option == '.' && !checkLastDoubleNumber())
-        errorMessage = "Liczba zawiera juz separator dziesietny";
-    if((option == '+' || option == '-' || option == '*' || option == '/') && !isdigit(LAST_CHAR))
+    if(option == '.') {
+        if(!isdigit(LAST_CHAR)) errorMessage = "Nie mozna wprowadzic separatora dziesietnego przed liczba";
+        else if(checkLastDoubleNumber()) errorMessage = "Liczba zawiera juz separator dziesietny";
+    }
+    if(checkIsOperator(option)
+       && (!isdigit(LAST_CHAR) && LAST_CHAR != 'e' && LAST_CHAR != 'p' && LAST_CHAR != '!'))
        errorMessage = "Nie dodano liczby po operatorze";
+    if(isdigit(option) && (LAST_CHAR == 'e' || LAST_CHAR == 'p'))
+        errorMessage = "Nie dodano operatora po liczbie";
+    if((option == 'e' || option == 'p') && !checkIsOperator(LAST_CHAR) && CurrentState.expression.size() > 0)
+        errorMessage = "Nie dodano operatora przed liczba";
+    if(option == '!') {
+        if(!isdigit(LAST_CHAR)) errorMessage = "Brak liczby calkowitej przed silnia";
+        else if(checkLastDoubleNumber()) errorMessage = "Silnia moze byc uzyta tylko przy liczbie calkowitej";
+        else if(checkNumberBeforeFactorial()) errorMessage = "Wartosc silnii musi miec wartosc miedzy 1-20";
+    }
 
     if(errorMessage.size() > 0) {
         CurrentState.statusMessage = errorMessage;
@@ -389,7 +406,7 @@ void eraseExpression() {
 void clearExpression() {
     CurrentState.statusMessage = "Wyczyszczono wyrazenie";
     CurrentState.expression = "";
-    CurrentState.result = 0;
+    CurrentState.expressionResult = "";
     printCalculator();
 }
 
@@ -397,9 +414,26 @@ void evalExpression() {
     string expr = CurrentState.expression;
     string errorMessage = "";
 
-    if(!isdigit(expr[expr.size() - 1])) errorMessage = "Ostatni znak wyrazenia nie jest cyfra";
+    if(!isdigit(expr[expr.size() - 1]) && expr[expr.size() - 1] != 'p' && expr[expr.size() - 1] != 'e' && expr[expr.size() - 1] != '!')
+        errorMessage = "Ostatni znak wyrazenia nie jest liczba";
     if(expr == "") errorMessage = "Nie wprowadzono wyrazenia";
-    if(checkDivisionByZero()) errorMessage = "Wykryto dzielenie przez zero";
+
+    int factorialMemoPosition = 0;
+
+    for(int ch = 0; ch < (int)expr.size(); ch++) {
+        if(expr[ch] == 'p') expr.replace(ch, 1, to_string(calculatePi()));
+        if(expr[ch] == 'e') expr.replace(ch, 1, to_string(calculateEuler()));
+
+        if(ch > 0 && checkIsOperator(expr[ch - 1])) factorialMemoPosition = ch;
+        if(expr[ch] == '!') {
+            int charsToSelect = ch - factorialMemoPosition + 1;
+            string factorialToCount = expr.substr(factorialMemoPosition, charsToSelect);
+            string convertedFactorialResult = to_string(calculateFactorial(stoi(factorialToCount)));
+            expr.replace(factorialMemoPosition, charsToSelect, convertedFactorialResult);
+        }
+    }
+
+    if(checkDivisionByZero(expr)) errorMessage = "Wykryto dzielenie przez zero";
 
     if(errorMessage.size() > 0) {
         CurrentState.statusMessage = errorMessage;
@@ -412,7 +446,6 @@ void evalExpression() {
     int valTop = -1, opTop = -1;
 
     for (int i = 0; i < (int)expr.size(); i++) {
-
         if (isdigit(expr[i]) || expr[i] == '.') {
             double value = 0, fraction = 0.1;
             bool isFloat = false;
@@ -442,8 +475,8 @@ void evalExpression() {
         valuesArray[++valTop] = applyOp(a, b, opsArray[opTop--]);
     }
 
-    CurrentState.statusMessage = "Obliczono wartosc wyrazenia [" + expr + "]";
-    CurrentState.result = valuesArray[valTop];
+    CurrentState.statusMessage = "Obliczono wartosc wyrazenia [" + CurrentState.expression + "]";
+    CurrentState.expressionResult = to_string(valuesArray[valTop]);
     CurrentState.expression = "";
     printCalculator();
 }
@@ -451,6 +484,7 @@ void evalExpression() {
 int precedence(char op) {
     if (op == '+' || op == '-') return 1;
     if (op == '*' || op == '/') return 2;
+    if (op == '^' || op == '#') return 3;
     return 0;
 }
 
@@ -460,6 +494,35 @@ double applyOp(double a, double b, char op) {
         case '-': return a - b;
         case '*': return a * b;
         case '/': return a / b;
+        case '^': return pow(a, b);
+        case '#': return pow(b, 1 / a);
     }
     return 0;
+}
+
+long long calculateFactorial(int number) {
+    if(number == 0) return 1;
+    long long result = 1;
+    for(int i = 1; i < number + 1; i++) {
+        result *= i;
+    }
+    return result;
+}
+
+long double calculateEuler() {
+    double result = 0.0;
+    for(int i = 0; i < 21; i++) result += 1.0 / calculateFactorial(i);
+    return result;
+}
+
+long double calculatePi() {
+    double base = 1.0;
+    // Szereg Madhavy-Leibniza
+    for(int i = 1; i < 1000000; i++) {
+        double calculation = 1.0 / (i * 2.0 + 1.0);
+        if(i % 2 == 0) base += calculation;
+        else base -= calculation;
+    }
+    double result = base * 4;
+    return result;
 }
